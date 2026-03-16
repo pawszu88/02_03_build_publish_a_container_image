@@ -2,16 +2,17 @@ name: Docker
 
 on:
   workflow_call:
-
   schedule:
     - cron: '16 17 * * *'
-
   push:
     branches: [ "main" ]
     tags: [ 'v*.*.*' ]
-
   pull_request:
     branches: [ "main" ]
+
+defaults:
+  run:
+    shell: bash
 
 env:
   REGISTRY: ghcr.io
@@ -32,7 +33,7 @@ jobs:
       contents: read
       packages: write
       id-token: write
-      actions: read   # ⭐ REQUIRED for reusable workflows using external actions
+      actions: read   
 
     steps:
       - name: Checkout repository
@@ -63,3 +64,18 @@ jobs:
 
       - name: Build and push Docker image
         id: build-and-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Sign the published Docker image
+        if: github.event_name != 'pull_request'
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
